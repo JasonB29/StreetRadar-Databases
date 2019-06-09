@@ -1,28 +1,64 @@
 import sys
 import os
 
-from sqlalchemy import Column, ForeignKey, Integer, String, DateTime
+from sqlalchemy import Column, ForeignKey, Integer, String, DateTime, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy import create_engine
 from sqlalchemy.sql import func
+# Imports for OAuth2.0 and custom OAuth
+from passlib.apps import custom_app_context as pwd_context
+import random, string
+from itsdangerous import (TimedJSONWebSignatureSerializer as Serializer, BadSignature, SignatureExpired)
 
 
 Base = declarative_base()
+secret_key = ''.join(random.choice(string.ascii_uppercase + string.digits) for x in range(32))
 
 class Member(Base):
     __tablename__ = "member_table"
     id = Column(Integer, primary_key = True)
-    username = Column(String(80), nullable = False)
+    email = Column(String(64), nullable=False, index=True)
+    password_hash = Column(String(64))
+    username = Column(String(80), nullable = True)
     age = Column(String(50), nullable = True)
     gender = Column(String(50), nullable = True)
     relationship_status = Column(String(80), nullable = True)
+    email_confirmed = Column(Boolean, nullable=True, default=False)
+    email_confirmed_on = Column(DateTime, nullable=True)
     location = relationship("Locations", uselist=False, back_populates = "member")
     location_history = relationship("LocationHistory")
     #interest_one = Column(String(50), nullable = True, ForeignKey('interest_table.id'))
     #interest_two = Column(String(50), nullable = True, ForeignKey('interest_table.id'))
     #interest_three = Column(String(50), nullable = True, ForeignKey('interest_table.id'))
     #interests = relationship(Interests)
+    
+    # Helper Functions for Password
+    def hash_password(self, password):
+        self.password_hash = pwd_context.hash(password)
+        
+    def verify_password(self, password):
+        return pwd_context.verify(password, self.password_hash)
+    
+    #604800
+    def generate_auth_token(self, expiration=300):  
+        s = Serializer(secret_key, expires_in=expiration)
+        print("Generating Token")
+        return s.dumps({'id': self.id})
+    
+    @staticmethod
+    def verify_auth_token(token):
+        s = Serializer(secret_key)
+        try:
+            data = s.loads(token)
+        except SignatureExpired:
+            print("Expired Token")
+            return None
+        except BadSignature:
+            print("Invalid Token")
+            return None
+        user_id = data['id']
+        return user_id
     
     @property
     def serialize(self):
